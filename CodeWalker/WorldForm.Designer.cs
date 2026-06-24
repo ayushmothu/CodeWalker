@@ -110,6 +110,13 @@ namespace CodeWalker
             this.SelDrawableTexturesTreeView = new CodeWalker.WinForms.TreeViewFix();
             this.SelectionExtensionTabPage = new System.Windows.Forms.TabPage();
             this.SelExtensionPropertyGrid = new CodeWalker.WinForms.ReadOnlyPropertyGrid();
+            this.SelectionPropListTabPage = new System.Windows.Forms.TabPage();
+            this.EntityPropListListView = new System.Windows.Forms.ListView();
+            this.AddEntityPropListButton = new System.Windows.Forms.Button();
+            this.RemoveEntityPropListButton = new System.Windows.Forms.Button();
+            this.ClearEntityPropListButton = new System.Windows.Forms.Button();
+            this.ExportEntityPropListButton = new System.Windows.Forms.Button();
+            this.EntityPropListSaveFileDialog = new System.Windows.Forms.SaveFileDialog();
             this.MouseSelectCheckBox = new System.Windows.Forms.CheckBox();
             this.OptionsTabPage = new System.Windows.Forms.TabPage();
             this.OptionsTabControl = new System.Windows.Forms.TabControl();
@@ -337,6 +344,7 @@ namespace CodeWalker
             this.tabPage12.SuspendLayout();
             this.tabPage13.SuspendLayout();
             this.SelectionExtensionTabPage.SuspendLayout();
+            this.SelectionPropListTabPage.SuspendLayout();
             this.OptionsTabPage.SuspendLayout();
             this.OptionsTabControl.SuspendLayout();
             this.OptionsGeneralTabPage.SuspendLayout();
@@ -1196,6 +1204,7 @@ namespace CodeWalker
             this.SelectionTabControl.Controls.Add(this.SelectionArchetypeTabPage);
             this.SelectionTabControl.Controls.Add(this.SelectionDrawableTabPage);
             this.SelectionTabControl.Controls.Add(this.SelectionExtensionTabPage);
+            this.SelectionTabControl.Controls.Add(this.SelectionPropListTabPage);
             this.SelectionTabControl.Location = new System.Drawing.Point(0, 95);
             this.SelectionTabControl.Margin = new System.Windows.Forms.Padding(0);
             this.SelectionTabControl.Name = "SelectionTabControl";
@@ -1373,6 +1382,81 @@ namespace CodeWalker
             this.SelExtensionPropertyGrid.Size = new System.Drawing.Size(197, 476);
             this.SelExtensionPropertyGrid.TabIndex = 36;
             this.SelExtensionPropertyGrid.ToolbarVisible = false;
+            // 
+            // SelectionPropListTabPage
+            // 
+            this.SelectionPropListTabPage.Controls.Add(this.EntityPropListListView);
+            this.SelectionPropListTabPage.Controls.Add(this.AddEntityPropListButton);
+            this.SelectionPropListTabPage.Controls.Add(this.RemoveEntityPropListButton);
+            this.SelectionPropListTabPage.Controls.Add(this.ClearEntityPropListButton);
+            this.SelectionPropListTabPage.Controls.Add(this.ExportEntityPropListButton);
+            this.SelectionPropListTabPage.Location = new System.Drawing.Point(4, 22);
+            this.SelectionPropListTabPage.Name = "SelectionPropListTabPage";
+            this.SelectionPropListTabPage.Size = new System.Drawing.Size(197, 485);
+            this.SelectionPropListTabPage.TabIndex = 4;
+            this.SelectionPropListTabPage.Text = "Prop List";
+            this.SelectionPropListTabPage.UseVisualStyleBackColor = true;
+            // 
+            // EntityPropListListView
+            // 
+            this.EntityPropListListView.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
+            | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.EntityPropListListView.FullRowSelect = true;
+            this.EntityPropListListView.HeaderStyle = System.Windows.Forms.ColumnHeaderStyle.Nonclickable;
+            this.EntityPropListListView.HideSelection = false;
+            this.EntityPropListListView.Location = new System.Drawing.Point(0, 0);
+            this.EntityPropListListView.Name = "EntityPropListListView";
+            this.EntityPropListListView.Size = new System.Drawing.Size(197, 413);
+            this.EntityPropListListView.TabIndex = 0;
+            this.EntityPropListListView.UseCompatibleStateImageBehavior = false;
+            this.EntityPropListListView.View = System.Windows.Forms.View.Details;
+            this.EntityPropListListView.Columns.Add("Name", 95, System.Windows.Forms.HorizontalAlignment.Left);
+            this.EntityPropListListView.Columns.Add("Position", 98, System.Windows.Forms.HorizontalAlignment.Left);
+            // 
+            // AddEntityPropListButton
+            // 
+            this.AddEntityPropListButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.AddEntityPropListButton.Location = new System.Drawing.Point(0, 416);
+            this.AddEntityPropListButton.Name = "AddEntityPropListButton";
+            this.AddEntityPropListButton.Size = new System.Drawing.Size(97, 23);
+            this.AddEntityPropListButton.TabIndex = 2;
+            this.AddEntityPropListButton.Text = "Add";
+            this.AddEntityPropListButton.UseVisualStyleBackColor = true;
+            this.AddEntityPropListButton.Click += new System.EventHandler(this.AddEntityPropListButton_Click);
+            // 
+            // RemoveEntityPropListButton
+            // 
+            this.RemoveEntityPropListButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.RemoveEntityPropListButton.Location = new System.Drawing.Point(100, 416);
+            this.RemoveEntityPropListButton.Name = "RemoveEntityPropListButton";
+            this.RemoveEntityPropListButton.Size = new System.Drawing.Size(97, 23);
+            this.RemoveEntityPropListButton.TabIndex = 3;
+            this.RemoveEntityPropListButton.Text = "Remove";
+            this.RemoveEntityPropListButton.UseVisualStyleBackColor = true;
+            this.RemoveEntityPropListButton.Click += new System.EventHandler(this.RemoveEntityPropListButton_Click);
+            // 
+            // ClearEntityPropListButton
+            // 
+            this.ClearEntityPropListButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left)));
+            this.ClearEntityPropListButton.Location = new System.Drawing.Point(0, 445);
+            this.ClearEntityPropListButton.Name = "ClearEntityPropListButton";
+            this.ClearEntityPropListButton.Size = new System.Drawing.Size(97, 23);
+            this.ClearEntityPropListButton.TabIndex = 4;
+            this.ClearEntityPropListButton.Text = "Clear";
+            this.ClearEntityPropListButton.UseVisualStyleBackColor = true;
+            this.ClearEntityPropListButton.Click += new System.EventHandler(this.ClearEntityPropListButton_Click);
+            // 
+            // ExportEntityPropListButton
+            // 
+            this.ExportEntityPropListButton.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right)));
+            this.ExportEntityPropListButton.Location = new System.Drawing.Point(100, 445);
+            this.ExportEntityPropListButton.Name = "ExportEntityPropListButton";
+            this.ExportEntityPropListButton.Size = new System.Drawing.Size(97, 23);
+            this.ExportEntityPropListButton.TabIndex = 5;
+            this.ExportEntityPropListButton.Text = "Export...";
+            this.ExportEntityPropListButton.UseVisualStyleBackColor = true;
+            this.ExportEntityPropListButton.Click += new System.EventHandler(this.ExportEntityPropListButton_Click);
             // 
             // MouseSelectCheckBox
             // 
@@ -3707,6 +3791,7 @@ namespace CodeWalker
             this.tabPage12.ResumeLayout(false);
             this.tabPage13.ResumeLayout(false);
             this.SelectionExtensionTabPage.ResumeLayout(false);
+            this.SelectionPropListTabPage.ResumeLayout(false);
             this.OptionsTabPage.ResumeLayout(false);
             this.OptionsTabControl.ResumeLayout(false);
             this.OptionsGeneralTabPage.ResumeLayout(false);
@@ -3944,6 +4029,13 @@ namespace CodeWalker
         private System.Windows.Forms.Label label25;
         private System.Windows.Forms.ComboBox SelectionModeComboBox;
         private System.Windows.Forms.TabPage SelectionExtensionTabPage;
+        private System.Windows.Forms.TabPage SelectionPropListTabPage;
+        private System.Windows.Forms.ListView EntityPropListListView;
+        private System.Windows.Forms.Button AddEntityPropListButton;
+        private System.Windows.Forms.Button RemoveEntityPropListButton;
+        private System.Windows.Forms.Button ClearEntityPropListButton;
+        private System.Windows.Forms.Button ExportEntityPropListButton;
+        private System.Windows.Forms.SaveFileDialog EntityPropListSaveFileDialog;
         private ReadOnlyPropertyGrid SelExtensionPropertyGrid;
         private System.Windows.Forms.CheckBox EnableModsCheckBox;
         private System.Windows.Forms.CheckBox EnableCayoPericoCheckBox;

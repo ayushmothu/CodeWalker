@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -168,6 +169,7 @@ namespace CodeWalker
         MapSelectionMode SelectionMode = MapSelectionMode.Entity;
         MapSelection SelectedItem;
         MapSelection CopiedItem;
+        List<YmapEntityDef> EntityPropList = new List<YmapEntityDef>();
         WorldInfoForm InfoForm = null;
         public MapSelection CurrentMapSelection { get { return SelectedItem; } }
 
@@ -6880,6 +6882,69 @@ namespace CodeWalker
             var marker = AddMarker(pos, name, true);
             SelectedMarker = marker;
             ShowMarkerSelectionInfo(SelectedMarker);
+        }
+
+        private void AddEntityPropListButton_Click(object sender, EventArgs e)
+        {
+            if (SelectedItem.EntityDef == null)
+            { return; }
+
+            var ent = SelectedItem.EntityDef;
+            for (int i = 0; i < EntityPropList.Count; i++)
+            {
+                if (EntityPropList[i].EntityHash == ent.EntityHash) return;
+            }
+            EntityPropList.Add(ent);
+            UpdateEntityPropListUI();
+        }
+
+        private void UpdateEntityPropListUI()
+        {
+            EntityPropListListView.BeginUpdate();
+            EntityPropListListView.Items.Clear();
+            for (int i = 0; i < EntityPropList.Count; i++)
+            {
+                var ent = EntityPropList[i];
+                var item = new ListViewItem(ent.Name);
+                item.SubItems.Add(FloatUtil.GetVector3String(ent.Position));
+                item.Tag = ent;
+                EntityPropListListView.Items.Add(item);
+            }
+            EntityPropListListView.EndUpdate();
+        }
+
+        private void RemoveEntityPropListButton_Click(object sender, EventArgs e)
+        {
+            if (EntityPropListListView.SelectedItems.Count == 0) return;
+            foreach (ListViewItem item in EntityPropListListView.SelectedItems)
+            {
+                var ent = item.Tag as YmapEntityDef;
+                if (ent != null) EntityPropList.Remove(ent);
+            }
+            UpdateEntityPropListUI();
+        }
+
+        private void ClearEntityPropListButton_Click(object sender, EventArgs e)
+        {
+            EntityPropList.Clear();
+            UpdateEntityPropListUI();
+        }
+
+        private void ExportEntityPropListButton_Click(object sender, EventArgs e)
+        {
+            if (EntityPropList.Count == 0) return;
+            EntityPropListSaveFileDialog.FileName = "entity_prop_list.txt";
+            if (EntityPropListSaveFileDialog.ShowDialog() != DialogResult.OK) return;
+            var sb = new StringBuilder();
+            for (int i = 0; i < EntityPropList.Count; i++)
+            {
+                var ent = EntityPropList[i];
+                sb.AppendLine(ent.Name);
+                sb.AppendLine("  Position: " + FloatUtil.GetVector3String(ent.Position));
+                sb.AppendLine("  Orientation: " + FloatUtil.GetVector4String(ent.Orientation.ToVector4()));
+                sb.AppendLine();
+            }
+            File.WriteAllText(EntityPropListSaveFileDialog.FileName, sb.ToString());
         }
 
         private void MarkerDepthClipCheckBox_CheckedChanged(object sender, EventArgs e)
