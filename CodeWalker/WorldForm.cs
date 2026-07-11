@@ -1299,6 +1299,15 @@ namespace CodeWalker
                 ori = ori * CurMouseHit.BBOrientation;
             }
 
+            if (CurMouseHit.EntityDef != null && CurMouseHit.Drawable != null && !ext
+                && CurMouseHit.CollisionPoly == null && CurMouseHit.CollisionVertex == null && CurMouseHit.CollisionBounds == null)
+            {
+                if (CurMouseHit.EntityDef != SelectedItem.EntityDef)
+                {
+                    RenderEntitySelectionOutline(CurMouseHit, 0xFFFFFFFF);
+                }
+                return;
+            }
 
             Renderer.RenderMouseHit(mode, ref camrel, ref bbmin, ref bbmax, ref scale, ref ori, bsphrad);
         }
@@ -1647,6 +1656,12 @@ namespace CodeWalker
                 ori = ori * selectionItem.BBOrientation;
             }
 
+            if (selectionItem.EntityDef != null)
+            {
+                RenderEntitySelectionOutline(selectionItem, 0xFF00FF00);
+                return;
+            }
+
             if (mode == BoundsShaderMode.Box)
             {
                 MapBox box = new MapBox();
@@ -1668,6 +1683,16 @@ namespace CodeWalker
         }
 
 
+
+        private void RenderEntitySelectionOutline(MapSelection selectionItem, uint colour)
+        {
+            if (selectionItem.CollisionPoly != null) return;
+            if (selectionItem.CollisionVertex != null) return;
+            if (selectionItem.CollisionBounds != null) return;
+            if (selectionItem.Drawable == null) return;
+
+            Renderer.RenderSelectionDrawableOutline(selectionItem.Drawable, selectionItem.EntityDef, selectionItem.Archetype, colour);
+        }
 
         private void RenderMarkers()
         {

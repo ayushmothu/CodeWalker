@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "CodeWalker.Props": {
+      "commandName": "Project",
+      "workingDirectory": ".."
+    }
+  }
+}

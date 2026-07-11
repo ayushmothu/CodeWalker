@@ -24,6 +24,7 @@ namespace CodeWalker
             bool projectmode = false;
             bool vehiclesmode = false;
             bool pedsmode = false;
+            bool propsmode = false;
             if ((args != null) && (args.Length > 0))
             {
                 foreach (string arg in args)
@@ -48,6 +49,10 @@ namespace CodeWalker
                     if (argl == "peds")
                     {
                         pedsmode = true;
+                    }
+                    if (argl == "props")
+                    {
+                        propsmode = true;
                     }
                 }
             }
@@ -88,6 +93,10 @@ namespace CodeWalker
                 else if (pedsmode)
                 {
                     Application.Run(new PedsForm());
+                }
+                else if (propsmode)
+                {
+                    Application.Run(new PropForm());
                 }
                 else
                 {
@@ -149,12 +158,22 @@ namespace CodeWalker
                 jtPeds.Description = "Open Ped Viewer";
                 jtPeds.CustomCategory = "Launch Options";
 
+                var jtProps = new JumpTask();
+                jtProps.ApplicationPath = cwpath;
+                jtProps.IconResourcePath = Path.Combine(cwdir, "CodeWalker Prop Viewer.exe");
+                jtProps.WorkingDirectory = cwdir;
+                jtProps.Arguments = "props";
+                jtProps.Title = "Prop Viewer";
+                jtProps.Description = "Open Prop Viewer";
+                jtProps.CustomCategory = "Launch Options";
+
                 var jumpList = new JumpList();
 
                 jumpList.JumpItems.Add(jtWorld);
                 jumpList.JumpItems.Add(jtExplorer);
                 jumpList.JumpItems.Add(jtVehicles);
                 jumpList.JumpItems.Add(jtPeds);
+                jumpList.JumpItems.Add(jtProps);
 
                 jumpList.Apply();
 

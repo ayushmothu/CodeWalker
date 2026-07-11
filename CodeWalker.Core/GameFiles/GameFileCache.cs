@@ -2613,6 +2613,10 @@ namespace CodeWalker.GameFiles
 
             }
         }
+        public void RegisterProjectTextureLookups(YtdFile ytd)
+        {
+            AddTextureLookups(ytd);
+        }
         public YtdFile TryGetTextureDictForTexture(uint hash)
         {
             lock (textureSyncRoot)
@@ -2640,6 +2644,31 @@ namespace CodeWalker.GameFiles
             MetaHash phash = 0;
             textureParents.TryGetValue(hash, out phash);
             return phash;
+        }
+        public int AddTxdRelationships(Dictionary<string, string> relationships)
+        {
+            if ((relationships == null) || (relationships.Count == 0)) return 0;
+
+            if (textureParents == null)
+            {
+                textureParents = new Dictionary<MetaHash, MetaHash>();
+            }
+
+            int added = 0;
+            foreach (var kvp in relationships)
+            {
+                if (string.IsNullOrWhiteSpace(kvp.Key) || string.IsNullOrWhiteSpace(kvp.Value)) continue;
+
+                uint chash = JenkHash.GenHash(kvp.Key.ToLowerInvariant());
+                uint phash = JenkHash.GenHash(kvp.Value.ToLowerInvariant());
+                if (!textureParents.ContainsKey(chash))
+                {
+                    textureParents.Add(chash, phash);
+                    added++;
+                }
+            }
+
+            return added;
         }
         public uint TryGetHDTextureHash(uint txdhash)
         {

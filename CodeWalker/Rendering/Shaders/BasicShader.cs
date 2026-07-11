@@ -984,6 +984,43 @@ namespace CodeWalker.Rendering
         }
 
 
+        public void SetGeomVarsSelectionOutline(DeviceContext context, RenderableGeometry geom)
+        {
+            PSGeomVars.Vars.EnableTexture = 0;
+            PSGeomVars.Vars.EnableTint = 0;
+            PSGeomVars.Vars.EnableNormalMap = 0;
+            PSGeomVars.Vars.EnableSpecMap = 0;
+            PSGeomVars.Vars.EnableDetailMap = 0;
+            PSGeomVars.Vars.IsDecal = 0;
+            PSGeomVars.Vars.IsEmissive = 1;
+            PSGeomVars.Vars.IsDistMap = 0;
+            PSGeomVars.Vars.bumpiness = 0;
+            PSGeomVars.Vars.AlphaScale = 1;
+            PSGeomVars.Vars.HardAlphaBlend = 0;
+            PSGeomVars.Vars.useTessellation = 0;
+            PSGeomVars.Vars.detailSettings = Vector4.Zero;
+            PSGeomVars.Vars.specMapIntMask = Vector3.Zero;
+            PSGeomVars.Vars.specularIntensityMult = 0.0f;
+            PSGeomVars.Vars.specularFalloffMult = 0.0f;
+            PSGeomVars.Vars.specularFresnel = 0.0f;
+            PSGeomVars.Vars.wetnessMultiplier = 0.0f;
+            PSGeomVars.Vars.SpecOnly = 0;
+            PSGeomVars.Vars.TextureAlphaMask = Vector4.Zero;
+            PSGeomVars.Update(context);
+            PSGeomVars.SetPSCBuffer(context, 2);
+
+            VSGeomVars.Vars.EnableTint = 0;
+            VSGeomVars.Vars.TintYVal = 0.0f;
+            VSGeomVars.Vars.IsDecal = 0;
+            VSGeomVars.Vars.EnableWind = 0;
+            VSGeomVars.Vars.WindOverrideParams = Vector4.Zero;
+            VSGeomVars.Vars.globalAnimUV0 = new Vector4(1.0f, 0.0f, 0.0f, 0.0f);
+            VSGeomVars.Vars.globalAnimUV1 = new Vector4(0.0f, 1.0f, 0.0f, 0.0f);
+            VSGeomVars.Update(context);
+            VSGeomVars.SetVSCBuffer(context, 4);
+        }
+
+
         public override void UnbindResources(DeviceContext context)
         {
             context.VertexShader.SetConstantBuffer(0, null);

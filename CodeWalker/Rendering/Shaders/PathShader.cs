@@ -26,6 +26,8 @@ namespace CodeWalker.Rendering
 
     public class PathShader : Shader, IDisposable
     {
+        public float IntensityMult = 1.0f;
+
         bool disposed = false;
 
         VertexShader boxvs;
@@ -101,7 +103,7 @@ namespace CodeWalker.Rendering
         {
             VSSceneVars.Vars.ViewProj = Matrix.Transpose(camera.ViewProjMatrix);
             VSSceneVars.Vars.CameraPos = new Vector4(camera.Position, 0.0f);
-            VSSceneVars.Vars.LightColour = new Vector4(1.0f, 1.0f, 1.0f, lights.HdrIntensity * 2.0f);
+            VSSceneVars.Vars.LightColour = new Vector4(1.0f, 1.0f, 1.0f, lights.HdrIntensity * 2.0f * IntensityMult);
             VSSceneVars.Update(context);
             VSSceneVars.SetVSCBuffer(context, 0);
         }

@@ -115,6 +115,8 @@ namespace CodeWalker.Rendering
 
         public int MSAASampleCount = 4;
 
+        DXManager dxman;
+
 
 
 
@@ -130,6 +132,7 @@ namespace CodeWalker.Rendering
 
         public DeferredScene(DXManager dxman)
         {
+            this.dxman = dxman;
             var device = dxman.device;
 
             byte[] bDirLightVS = PathUtil.ReadAllBytes("Shaders\\DirLightVS.cso");
@@ -357,7 +360,7 @@ namespace CodeWalker.Rendering
         public void Clear(DeviceContext context)
         {
             GBuffers.Clear(context, new Color4(0.0f, 0.0f, 0.0f, 0.0f));
-            SceneColour.Clear(context, new Color4(0.2f, 0.4f, 0.6f, 0.0f));
+            SceneColour.Clear(context, dxman.GetClearColour4(0.0f));
         }
         public void ClearDepth(DeviceContext context)
         {

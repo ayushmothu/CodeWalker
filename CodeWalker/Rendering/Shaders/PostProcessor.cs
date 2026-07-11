@@ -167,6 +167,7 @@ namespace CodeWalker.Rendering
 
         DeferredScene DefScene;
         bool UsePrimary = true;
+        DXManager dxman;
 
         ShaderResourceView SceneColourSRV
         {
@@ -184,6 +185,7 @@ namespace CodeWalker.Rendering
 
         public PostProcessor(DXManager dxman)
         {
+            this.dxman = dxman;
             var device = dxman.device;
 
             byte[] bReduceTo1DCS = PathUtil.ReadAllBytes("Shaders\\PPReduceTo1DCS.cso");
@@ -419,10 +421,7 @@ namespace CodeWalker.Rendering
 
         public void Clear(DeviceContext context)
         {
-            Color4 clearColour = new Color4(0.2f, 0.4f, 0.6f, 0.0f);
-            //Color4 clearColour = new Color4(0.0f, 0.0f, 0.0f, 0.0f);
-
-            Primary.Clear(context, clearColour);
+            Primary.Clear(context, dxman.GetClearColour4(0.0f));
         }
         public void ClearDepth(DeviceContext context)
         {

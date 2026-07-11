@@ -58,6 +58,8 @@ namespace CodeWalker.Rendering
         public bool controllightdir = false; //if not, use timecycle
         public float lightdirx = 2.25f;//radians // approx. light dir on map satellite view
         public float lightdiry = 0.65f;//radians  - used for manual light placement
+        public bool StudioLightingOverride = false; //even, neutral lighting for model viewers
+        public float StudioLightExposure = 0.95f;
         public bool renderskydome = Settings.Default.Skydome;
         public bool renderclouds = true;
         public bool rendermoon = true;
@@ -145,6 +147,29 @@ namespace CodeWalker.Rendering
         public List<MapSphere> WhiteSpheres = new List<MapSphere>();
         public List<VertexTypePC> SelectionLineVerts = new List<VertexTypePC>();
         public List<VertexTypePC> SelectionTriVerts = new List<VertexTypePC>();
+
+        struct SelectionEdgeKey : IEquatable<SelectionEdgeKey>
+        {
+            public int A;
+            public int B;
+            public SelectionEdgeKey(int i1, int i2)
+            {
+                if (i1 < i2) { A = i1; B = i2; }
+                else { A = i2; B = i1; }
+            }
+            public bool Equals(SelectionEdgeKey other) { return (A == other.A) && (B == other.B); }
+            public override bool Equals(object obj) { return (obj is SelectionEdgeKey) && Equals((SelectionEdgeKey)obj); }
+            public override int GetHashCode() { return (A * 397) ^ B; }
+        }
+
+        struct SelectionWireframeItem
+        {
+            public DrawableBase Drawable;
+            public YmapEntityDef Entity;
+            public Archetype Archetype;
+            public uint Colour;
+        }
+        List<SelectionWireframeItem> SelectionWireframeItems = new List<SelectionWireframeItem>();
 
 
         private YmapEntityDef SelectedCarGenEntity = new YmapEntityDef(); //placeholder entity object for drawing cars
@@ -293,6 +318,7 @@ namespace CodeWalker.Rendering
 
             SelectionLineVerts.Clear();
             SelectionTriVerts.Clear();
+            SelectionWireframeItems.Clear();
             WhiteBoxes.Clear();
             WhiteSpheres.Clear();
             SelectionBoxes.Clear();
@@ -490,7 +516,17 @@ namespace CodeWalker.Rendering
                 lightdir.Z = (float)Math.Sin(lightdiry);
                 lightdircolour = Color4.White;
                 lightdirambcolour = new Color4(0.5f, 0.5f, 0.5f, 1.0f);
-                if (hdr && (weather != null) && (weather.Inited))
+                if (StudioLightingOverride)
+                {
+                    float e = StudioLightExposure;
+                    // Soft fill + gentle key, similar to Blender solid viewport.
+                    lightdircolour = new Color4(0.10f * e, 0.10f * e, 0.10f * e, 1.0f);
+                    lightdirambcolour = new Color4(0.78f * e, 0.78f * e, 0.78f * e, 1.0f);
+                    lightnaturalupcolour = new Color4(0.14f * e, 0.14f * e, 0.15f * e, 1.0f);
+                    lightnaturaldowncolour = new Color4(0.10f * e, 0.10f * e, 0.10f * e, 1.0f);
+                    hdrint = 0.85f;
+                }
+                else if (hdr && (weather != null) && (weather.Inited))
                 {
                     lightdircolour *= weather.CurrentValues.skyHdr;
                     lightdircolour.Alpha = 1.0f;
@@ -590,8 +626,8 @@ namespace CodeWalker.Rendering
 
             globalLights.Weather = weather;
             globalLights.HdrEnabled = hdr;
-            globalLights.SpecularEnabled = !MapViewEnabled;//disable specular for map view.
-            globalLights.HdrIntensity = Math.Max(hdrint, 1.0f);
+            globalLights.SpecularEnabled = StudioLightingOverride ? false : !MapViewEnabled;//disable specular for map view.
+            globalLights.HdrIntensity = StudioLightingOverride ? hdrint : Math.Max(hdrint, 1.0f);
             globalLights.CurrentSunDir = sundir;
             globalLights.CurrentMoonDir = moondir;
             globalLights.MoonAxis = moonax;
@@ -1205,12 +1241,6 @@ namespace CodeWalker.Rendering
 
         public void RenderSelectionCollisionPolyOutline(BoundPolygon poly, uint colourval, YmapEntityDef entity)
         {
-            var bgeom = poly?.Owner;
-            if (bgeom == null) return;
-
-            VertexTypePC v = new VertexTypePC();
-            v.Colour = colourval;
-
             var ori = Quaternion.Identity;
             var pos = Vector3.Zero;
             var sca = Vector3.One;
@@ -1220,6 +1250,17 @@ namespace CodeWalker.Rendering
                 pos = entity.Position;
                 sca = entity.Scale;
             }
+            RenderSelectionCollisionPolyOutline(poly, colourval, pos, ori, sca);
+        }
+
+        public void RenderSelectionCollisionPolyOutline(BoundPolygon poly, uint colourval, Vector3 pos, Quaternion ori, Vector3 scale)
+        {
+            var bgeom = poly?.Owner;
+            if (bgeom == null) return;
+
+            VertexTypePC v = new VertexTypePC();
+            v.Colour = colourval;
+            var sca = scale;
 
             if (poly is BoundPolygonTriangle ptri)
             {
@@ -1275,6 +1316,392 @@ namespace CodeWalker.Rendering
 
         }
 
+        private void RenderSelectionBoundGeometrySilhouette(BoundGeometry bgeom, Vector3 pos, Quaternion ori, Vector3 scale, uint colourval)
+        {
+            if (bgeom.Polygons == null) return;
+
+            var edgeNormals = new Dictionary<SelectionEdgeKey, List<Vector3>>();
+            var edgeVerts = new Dictionary<SelectionEdgeKey, Tuple<Vector3, Vector3>>();
+
+            for (int i = 0; i < bgeom.Polygons.Length; i++)
+            {
+                var ptri = bgeom.Polygons[i] as BoundPolygonTriangle;
+                if (ptri == null) continue;
+
+                var lv0 = bgeom.GetVertex(ptri.vertIndex1);
+                var lv1 = bgeom.GetVertex(ptri.vertIndex2);
+                var lv2 = bgeom.GetVertex(ptri.vertIndex3);
+                var v0 = pos + ori.Multiply(lv0 * scale);
+                var v1 = pos + ori.Multiply(lv1 * scale);
+                var v2 = pos + ori.Multiply(lv2 * scale);
+                var norm = Vector3.Cross(v1 - v0, v2 - v0);
+                if (norm.LengthSquared() < 1e-12f) continue;
+                norm = Vector3.Normalize(norm);
+
+                AddSelectionSilhouetteEdge(edgeNormals, edgeVerts, ptri.vertIndex1, ptri.vertIndex2, v0, v1, norm);
+                AddSelectionSilhouetteEdge(edgeNormals, edgeVerts, ptri.vertIndex2, ptri.vertIndex3, v1, v2, norm);
+                AddSelectionSilhouetteEdge(edgeNormals, edgeVerts, ptri.vertIndex3, ptri.vertIndex1, v2, v0, norm);
+            }
+
+            FlushSelectionSilhouetteEdges(edgeNormals, edgeVerts, colourval);
+        }
+
+        private void FlushSelectionSilhouetteEdges(Dictionary<SelectionEdgeKey, List<Vector3>> edgeNormals, Dictionary<SelectionEdgeKey, Tuple<Vector3, Vector3>> edgeVerts, uint colourval)
+        {
+            if (edgeNormals.Count == 0) return;
+
+            var campos = camera.Position;
+            var v = new VertexTypePC();
+            v.Colour = colourval;
+
+            foreach (var kvp in edgeNormals)
+            {
+                var norms = kvp.Value;
+                var verts = edgeVerts[kvp.Key];
+                var mid = (verts.Item1 + verts.Item2) * 0.5f;
+                var viewDir = campos - mid;
+                if (viewDir.LengthSquared() < 1e-12f) viewDir = Vector3.UnitZ;
+                else viewDir = Vector3.Normalize(viewDir);
+
+                bool draw = false;
+                if (norms.Count == 1)
+                {
+                    draw = Vector3.Dot(norms[0], viewDir) > 0;
+                }
+                else
+                {
+                    float d0 = Vector3.Dot(norms[0], viewDir);
+                    float d1 = Vector3.Dot(norms[1], viewDir);
+                    draw = (d0 * d1 <= 0);
+                }
+
+                if (draw)
+                {
+                    v.Position = verts.Item1; SelectionLineVerts.Add(v);
+                    v.Position = verts.Item2; SelectionLineVerts.Add(v);
+                }
+            }
+        }
+
+        private static void AddSelectionSilhouetteEdge(Dictionary<SelectionEdgeKey, List<Vector3>> edgeNormals, Dictionary<SelectionEdgeKey, Tuple<Vector3, Vector3>> edgeVerts, int i1, int i2, Vector3 v1, Vector3 v2, Vector3 norm)
+        {
+            var key = new SelectionEdgeKey(i1, i2);
+            List<Vector3> norms;
+            if (!edgeNormals.TryGetValue(key, out norms))
+            {
+                norms = new List<Vector3>();
+                edgeNormals[key] = norms;
+                edgeVerts[key] = Tuple.Create(v1, v2);
+            }
+            norms.Add(norm);
+        }
+
+        public void RenderSelectionCollisionOutline(Bounds bounds, YmapEntityDef entity, uint colourval)
+        {
+            if (bounds == null) return;
+            var pos = Vector3.Zero;
+            var ori = Quaternion.Identity;
+            var scale = Vector3.One;
+            if (entity != null)
+            {
+                pos = entity.Position;
+                ori = entity.Orientation;
+                scale = entity.Scale;
+            }
+            RenderSelectionCollisionOutline(bounds, pos, ori, scale, colourval);
+        }
+
+        public void RenderSelectionCollisionOutline(Bounds bounds, Vector3 pos, Quaternion ori, Vector3 scale, uint colourval)
+        {
+            if (bounds == null) return;
+
+            if (bounds is BoundGeometry bgeom)
+            {
+                if (bgeom.Polygons != null)
+                {
+                    for (int i = 0; i < bgeom.Polygons.Length; i++)
+                    {
+                        var poly = bgeom.Polygons[i];
+                        if ((poly != null) && (poly.Type != BoundPolygonType.Triangle))
+                        {
+                            RenderSelectionCollisionPolyOutline(poly, colourval, pos, ori, scale);
+                        }
+                    }
+                }
+                RenderSelectionBoundGeometrySilhouette(bgeom, pos, ori, scale, colourval);
+                return;
+            }
+            if (bounds is BoundComposite bcomp)
+            {
+                if (bcomp.Children?.data_items == null) return;
+                for (int i = 0; i < bcomp.Children.data_items.Length; i++)
+                {
+                    var child = bcomp.Children.data_items[i];
+                    if (child == null) continue;
+                    var cpos = pos;
+                    var cori = ori;
+                    var csca = scale;
+                    var rmat = child.Transform;
+                    csca = csca * rmat.ScaleVector;
+                    cpos = cpos + cori.Multiply(rmat.TranslationVector);
+                    rmat.TranslationVector = Vector3.Zero;
+                    cori = cori * Quaternion.RotationMatrix(rmat);
+                    RenderSelectionCollisionOutline(child, cpos, cori, csca, colourval);
+                }
+            }
+        }
+
+        public void RenderSelectionDrawableOutline(DrawableBase drawable, YmapEntityDef entity, Archetype arche, uint colourval)
+        {
+            if (drawable == null) return;
+
+            var pos = Vector3.Zero;
+            var ori = Quaternion.Identity;
+            var scale = Vector3.One;
+            if (entity != null)
+            {
+                pos = entity.Position;
+                ori = entity.Orientation;
+                scale = entity.Scale;
+            }
+
+            var models = drawable.DrawableModels?.High;
+            if ((models == null) || (models.Length == 0))
+            {
+                models = drawable.DrawableModels?.Med;
+            }
+            if ((models == null) || (models.Length == 0))
+            {
+                models = drawable.DrawableModels?.Low;
+            }
+            if ((models == null) || (models.Length == 0))
+            {
+                models = drawable.DrawableModels?.VLow;
+            }
+            if ((models == null) || (models.Length == 0))
+            {
+                models = drawable.AllModels;
+            }
+            if ((models == null) || (models.Length == 0)) return;
+
+            var rndbl = renderableCache.GetRenderable(drawable);
+            var v = new VertexTypePC();
+            v.Colour = colourval;
+
+            for (int mi = 0; mi < models.Length; mi++)
+            {
+                var model = models[mi];
+                if ((model == null) || (model.Geometries == null)) continue;
+                if (model.HasSkin > 0) continue;
+
+                var modelMat = Matrix.Identity;
+                if ((rndbl != null) && rndbl.IsLoaded)
+                {
+                    var rndModel = FindRenderableModel(rndbl, model);
+                    if ((rndModel != null) && rndModel.UseTransform)
+                    {
+                        modelMat = rndModel.Transform;
+                    }
+                }
+
+                for (int gi = 0; gi < model.Geometries.Length; gi++)
+                {
+                    var geomEdges = new Dictionary<SelectionEdgeKey, bool>();
+                    AddSelectionDrawableGeometryWireframe(model.Geometries[gi], modelMat, pos, ori, scale, geomEdges, ref v);
+                }
+            }
+
+            SelectionWireframeItem item = new SelectionWireframeItem();
+            item.Drawable = drawable;
+            item.Entity = entity;
+            item.Archetype = arche;
+            item.Colour = colourval;
+            SelectionWireframeItems.Add(item);
+        }
+
+        private static RenderableModel FindRenderableModel(Renderable rndbl, DrawableModel model)
+        {
+            if ((rndbl?.AllModels == null) || (model == null)) return null;
+            for (int i = 0; i < rndbl.AllModels.Length; i++)
+            {
+                if (rndbl.AllModels[i]?.DrawableModel == model)
+                {
+                    return rndbl.AllModels[i];
+                }
+            }
+            return null;
+        }
+
+        private void AddSelectionDrawableGeometryWireframe(DrawableGeometry geom, Matrix modelMat, Vector3 entPos, Quaternion entOri, Vector3 entScale, Dictionary<SelectionEdgeKey, bool> edgeVerts, ref VertexTypePC v)
+        {
+            var vd = geom?.VertexData;
+            var indices = geom?.IndexBuffer?.Indices;
+            if ((vd == null) || (indices == null) || (indices.Length < 3)) return;
+            if ((vd.Info == null) || ((vd.Info.Flags & (1u << (int)VertexSemantics.Position)) == 0)) return;
+
+            int posIdx = (int)VertexSemantics.Position;
+            int tricount = indices.Length / 3;
+
+            for (int t = 0; t < tricount; t++)
+            {
+                int i0 = indices[t * 3];
+                int i1 = indices[t * 3 + 1];
+                int i2 = indices[t * 3 + 2];
+
+                var lv0 = vd.GetVector3(i0, posIdx);
+                var lv1 = vd.GetVector3(i1, posIdx);
+                var lv2 = vd.GetVector3(i2, posIdx);
+                var v0 = entPos + entOri.Multiply(modelMat.MultiplyW(lv0) * entScale);
+                var v1 = entPos + entOri.Multiply(modelMat.MultiplyW(lv1) * entScale);
+                var v2 = entPos + entOri.Multiply(modelMat.MultiplyW(lv2) * entScale);
+
+                AddSelectionDrawableWireframeEdge(edgeVerts, ref v, i0, i1, v0, v1);
+                AddSelectionDrawableWireframeEdge(edgeVerts, ref v, i1, i2, v1, v2);
+                AddSelectionDrawableWireframeEdge(edgeVerts, ref v, i2, i0, v2, v0);
+            }
+        }
+
+        private void AddSelectionDrawableWireframeEdge(Dictionary<SelectionEdgeKey, bool> edgeVerts, ref VertexTypePC v, int i1, int i2, Vector3 p1, Vector3 p2)
+        {
+            var key = new SelectionEdgeKey(i1, i2);
+            if (edgeVerts.ContainsKey(key)) return;
+            edgeVerts[key] = true;
+            v.Position = p1; SelectionLineVerts.Add(v);
+            v.Position = p2; SelectionLineVerts.Add(v);
+        }
+
+        private void RenderSelectionWireframeGpuOverlays()
+        {
+            if (SelectionWireframeItems.Count == 0) return;
+
+            bool owf = shaders.wireframe;
+            bool owdef = shaders.Basic.Deferred;
+            var owrm = shaders.Basic.RenderMode;
+
+            shaders.wireframe = true;
+            shaders.Basic.Deferred = false;
+            shaders.Basic.RenderMode = WorldRenderMode.Default;
+            shaders.SetRasterizerMode(context, RasterizerMode.WireframeDblSided);
+            shaders.SetDepthStencilMode(context, DepthStencilMode.DisableWrite);
+
+            var basic = shaders.Basic;
+            basic.SetShader(context);
+            basic.SetSceneVars(context, camera, null, shaders.GlobalLights);
+
+            for (int i = 0; i < SelectionWireframeItems.Count; i++)
+            {
+                RenderSelectionWireframeGpuOverlay(SelectionWireframeItems[i], basic);
+            }
+
+            basic.UnbindResources(context);
+
+            shaders.wireframe = owf;
+            shaders.Basic.Deferred = owdef;
+            shaders.Basic.RenderMode = owrm;
+        }
+
+        private void RenderSelectionWireframeGpuOverlay(SelectionWireframeItem item, BasicShader basic)
+        {
+            var rndbl = TryGetRenderable(item.Archetype, item.Drawable);
+            if ((rndbl == null) || !rndbl.IsLoaded) return;
+
+            Vector3 camrel = -camera.Position;
+            Vector3 position = Vector3.Zero;
+            Vector3 scale = Vector3.One;
+            Quaternion orientation = Quaternion.Identity;
+            if (item.Entity != null)
+            {
+                position = item.Entity.Position;
+                scale = item.Entity.Scale;
+                orientation = item.Entity.Orientation;
+                camrel += position;
+            }
+
+            RenderableInst inst = new RenderableInst();
+            inst.Renderable = rndbl;
+            inst.CamRel = camrel;
+            inst.Position = position;
+            inst.Scale = scale;
+            inst.Orientation = orientation;
+
+            RenderableModel[] models = (rndbl.HDModels != null) && (rndbl.HDModels.Length > 0) ? rndbl.HDModels : rndbl.AllModels;
+            if ((models == null) || (models.Length == 0)) return;
+
+            RenderableModel curmodel = null;
+            VertexType vtyp = 0;
+            bool vtypok = false;
+
+            for (int mi = 0; mi < models.Length; mi++)
+            {
+                var model = models[mi];
+                if (model.IsSkinMesh) continue;
+
+                for (int gi = 0; gi < model.Geometries.Length; gi++)
+                {
+                    var geom = model.Geometries[gi];
+                    if (geom.disableRendering) continue;
+                    if ((geom.VertexBuffer == null) || (geom.IndexBuffer == null)) continue;
+
+                    basic.SetEntityVars(context, ref inst);
+
+                    if (model != curmodel)
+                    {
+                        curmodel = model;
+                        basic.SetModelVars(context, model);
+                    }
+
+                    if (geom.VertexType != vtyp)
+                    {
+                        vtyp = geom.VertexType;
+                        vtypok = basic.SetInputLayout(context, vtyp);
+                    }
+
+                    if (vtypok)
+                    {
+                        basic.SetGeomVarsSelectionOutline(context, geom);
+                        geom.Render(context);
+                    }
+                }
+            }
+        }
+
+        public void RenderSelectionDrawableOutline(DrawableBase drawable, YmapEntityDef entity, uint colourval)
+        {
+            RenderSelectionDrawableOutline(drawable, entity, null, colourval);
+        }
+
+        private void AddSelectionDrawableGeometrySilhouette(DrawableGeometry geom, Matrix modelMat, Vector3 entPos, Quaternion entOri, Vector3 entScale, Dictionary<SelectionEdgeKey, List<Vector3>> edgeNormals, Dictionary<SelectionEdgeKey, Tuple<Vector3, Vector3>> edgeVerts)
+        {
+            var vd = geom?.VertexData;
+            var indices = geom?.IndexBuffer?.Indices;
+            if ((vd == null) || (indices == null) || (indices.Length < 3)) return;
+            if ((vd.Info == null) || ((vd.Info.Flags & (1u << (int)VertexSemantics.Position)) == 0)) return;
+
+            int posIdx = (int)VertexSemantics.Position;
+            int tricount = indices.Length / 3;
+
+            for (int t = 0; t < tricount; t++)
+            {
+                int i0 = indices[t * 3];
+                int i1 = indices[t * 3 + 1];
+                int i2 = indices[t * 3 + 2];
+
+                var lv0 = vd.GetVector3(i0, posIdx);
+                var lv1 = vd.GetVector3(i1, posIdx);
+                var lv2 = vd.GetVector3(i2, posIdx);
+                var v0 = entPos + entOri.Multiply(modelMat.MultiplyW(lv0) * entScale);
+                var v1 = entPos + entOri.Multiply(modelMat.MultiplyW(lv1) * entScale);
+                var v2 = entPos + entOri.Multiply(modelMat.MultiplyW(lv2) * entScale);
+                var norm = Vector3.Cross(v1 - v0, v2 - v0);
+                if (norm.LengthSquared() < 1e-12f) continue;
+                norm = Vector3.Normalize(norm);
+
+                AddSelectionSilhouetteEdge(edgeNormals, edgeVerts, i0, i1, v0, v1, norm);
+                AddSelectionSilhouetteEdge(edgeNormals, edgeVerts, i1, i2, v1, v2, norm);
+                AddSelectionSilhouetteEdge(edgeNormals, edgeVerts, i2, i0, v2, v0, norm);
+            }
+        }
+
         public void RenderSelectionGeometry(MapSelectionMode mode)
         {
 
@@ -1293,6 +1720,8 @@ namespace CodeWalker.Rendering
 
             shaders.SetDepthStencilMode(context, clip ? DepthStencilMode.Enabled : DepthStencilMode.DisableAll);
 
+            RenderSelectionWireframeGpuOverlays();
+
             var pshader = shaders.Paths;
             if (SelectionTriVerts.Count > 0)
             {
@@ -1300,11 +1729,11 @@ namespace CodeWalker.Rendering
             }
             if (SelectionLineVerts.Count > 0)
             {
+                float pathInt = pshader.IntensityMult;
+                pshader.IntensityMult = 5.0f;
                 pshader.RenderLines(context, SelectionLineVerts, camera, shaders.GlobalLights);
+                pshader.IntensityMult = pathInt;
             }
-
-
-
 
             Vector3 coloursel = new Vector3(0, 1, 0) * globalLights.HdrIntensity * 5.0f;
             Vector3 colourwht = new Vector3(1, 1, 1) * globalLights.HdrIntensity * 10.0f;

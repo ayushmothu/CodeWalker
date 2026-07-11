@@ -9,6 +9,9 @@ using Color = SharpDX.Color;
 using Device = SharpDX.Direct3D11.Device;
 using Buffer = SharpDX.Direct3D11.Buffer;
 using DriverType = SharpDX.Direct3D.DriverType;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 using SharpDX;
@@ -34,7 +37,9 @@ namespace CodeWalker.Rendering
         private object syncroot = new object(); //for thread safety
         public int multisamplecount { get; private set; } = 4; //should be a setting..
         public int multisamplequality { get; private set; } = 0; //should be a setting...
-        public Color clearcolour { get; private set; } = new Color(0.2f, 0.4f, 0.6f, 1.0f); //gross
+        public Color clearcolour { get; private set; } = DefaultClearColour;
+        public static readonly Color DefaultClearColour = new Color(0.2f, 0.4f, 0.6f, 1.0f);
+        public static readonly Color GreenScreenClearColour = new Color(0f, 1f, 0f, 1f);
         private System.Drawing.Size beginSize;
         private ViewportF Viewport;
         private bool autoStartLoop = false;
@@ -346,6 +351,15 @@ namespace CodeWalker.Rendering
             ctx.ClearRenderTargetView(targetview, clearcolour);
             ctx.ClearDepthStencilView(depthview, DepthStencilClearFlags.Depth, 0.0f, 0);
         }
+        public void SetClearColour(Color colour)
+        {
+            clearcolour = colour;
+        }
+        public Color4 GetClearColour4(float alpha = 0.0f)
+        {
+            var c = clearcolour;
+            return new Color4(c.R / 255.0f, c.G / 255.0f, c.B / 255.0f, alpha);
+        }
         public void ClearDepth(DeviceContext ctx)
         {
             ctx.ClearDepthStencilView(depthview, DepthStencilClearFlags.Depth, 0.0f, 0);
@@ -355,6 +369,107 @@ namespace CodeWalker.Rendering
             ctx.OutputMerger.SetRenderTargets(depthview, targetview);
             ctx.Rasterizer.SetViewport(Viewport);
             //ctx.Rasterizer.State = RasterizerStateSolid;
+        }
+
+        public Bitmap CaptureBackbufferRectangle(int x, int y, int width, int height)
+        {
+            if ((width <= 0) || (height <= 0) || (backbuffer == null) || (context == null)) return null;
+
+            x = Math.Max(0, Math.Min(x, backbuffer.Description.Width - 1));
+            y = Math.Max(0, Math.Min(y, backbuffer.Description.Height - 1));
+            width = Math.Min(width, backbuffer.Description.Width - x);
+            height = Math.Min(height, backbuffer.Description.Height - y);
+            if ((width <= 0) || (height <= 0)) return null;
+
+            Texture2D srcTexture = backbuffer;
+            Texture2D resolved = null;
+
+            if (multisamplecount > 1)
+            {
+                var srcDesc = backbuffer.Description;
+                resolved = new Texture2D(device, new Texture2DDescription()
+                {
+                    Width = srcDesc.Width,
+                    Height = srcDesc.Height,
+                    MipLevels = 1,
+                    ArraySize = 1,
+                    Format = srcDesc.Format,
+                    SampleDescription = new SampleDescription(1, 0),
+                    Usage = ResourceUsage.Default,
+                    BindFlags = BindFlags.None,
+                    CpuAccessFlags = CpuAccessFlags.None,
+                    OptionFlags = ResourceOptionFlags.None
+                });
+                context.ResolveSubresource(backbuffer, 0, resolved, 0, srcDesc.Format);
+                srcTexture = resolved;
+            }
+
+            var staging = new Texture2D(device, new Texture2DDescription()
+            {
+                Width = srcTexture.Description.Width,
+                Height = srcTexture.Description.Height,
+                MipLevels = 1,
+                ArraySize = 1,
+                Format = Format.R8G8B8A8_UNorm,
+                SampleDescription = new SampleDescription(1, 0),
+                Usage = ResourceUsage.Staging,
+                BindFlags = BindFlags.None,
+                CpuAccessFlags = CpuAccessFlags.Read,
+                OptionFlags = ResourceOptionFlags.None
+            });
+
+            try
+            {
+                context.CopyResource(srcTexture, staging);
+
+                var dataBox = context.MapSubresource(staging, 0, MapMode.Read, SharpDX.Direct3D11.MapFlags.None);
+                try
+                {
+                    var bmp = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    var bounds = new System.Drawing.Rectangle(0, 0, width, height);
+                    var bmpData = bmp.LockBits(bounds, ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+                    try
+                    {
+                        int srcStride = dataBox.RowPitch;
+                        int dstStride = bmpData.Stride;
+                        IntPtr srcBase = dataBox.DataPointer;
+                        IntPtr dstBase = bmpData.Scan0;
+                        for (int row = 0; row < height; row++)
+                        {
+                            int srcRow = (y + row) * srcStride + x * 4;
+                            int dstRow = row * dstStride;
+                            for (int col = 0; col < width; col++)
+                            {
+                                int srcOff = srcRow + col * 4;
+                                int dstOff = dstRow + col * 4;
+                                // D3D R8G8B8A8 is R,G,B,A — GDI+ 32bpp ARGB is B,G,R,A in memory
+                                byte r = Marshal.ReadByte(srcBase, srcOff + 0);
+                                byte g = Marshal.ReadByte(srcBase, srcOff + 1);
+                                byte b = Marshal.ReadByte(srcBase, srcOff + 2);
+                                byte a = Marshal.ReadByte(srcBase, srcOff + 3);
+                                Marshal.WriteByte(dstBase, dstOff + 0, b);
+                                Marshal.WriteByte(dstBase, dstOff + 1, g);
+                                Marshal.WriteByte(dstBase, dstOff + 2, r);
+                                Marshal.WriteByte(dstBase, dstOff + 3, a);
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        bmp.UnlockBits(bmpData);
+                    }
+                    return bmp;
+                }
+                finally
+                {
+                    context.UnmapSubresource(staging, 0);
+                }
+            }
+            finally
+            {
+                staging.Dispose();
+                if (resolved != null) resolved.Dispose();
+            }
         }
 
 
