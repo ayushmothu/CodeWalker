@@ -29,6 +29,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWalker.Gen9Converter", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWalker.Props", "CodeWalker.Props\CodeWalker.Props.csproj", "{08892FE9-FB3C-4320-AAEF-64C5E29EBF98}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWalker.RealMap", "CodeWalker.RealMap\CodeWalker.RealMap.csproj", "{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -170,6 +172,18 @@ Global
 		{08892FE9-FB3C-4320-AAEF-64C5E29EBF98}.Release|x64.Build.0 = Release|Any CPU
 		{08892FE9-FB3C-4320-AAEF-64C5E29EBF98}.Release|x86.ActiveCfg = Release|Any CPU
 		{08892FE9-FB3C-4320-AAEF-64C5E29EBF98}.Release|x86.Build.0 = Release|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Debug|x64.Build.0 = Debug|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Debug|x86.Build.0 = Debug|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Release|x64.ActiveCfg = Release|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Release|x64.Build.0 = Release|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Release|x86.ActiveCfg = Release|Any CPU
+		{B7E4C1A2-9F3D-4E8B-A6C5-1D2E3F4A5B6C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -17,7 +17,7 @@ namespace CodeWalker.World
         public List<WaterCalmingQuad> CalmingQuads = new List<WaterCalmingQuad>();
         public List<WaterWaveQuad> WaveQuads = new List<WaterWaveQuad>();
 
-        public void Init(GameFileCache gameFileCache, Action<string> updateStatus)
+        public void Init(GameFileCache gameFileCache, Action<string> updateStatus, bool loadHeistIsland = true)
         {
             GameFileCache = gameFileCache;
 
@@ -28,7 +28,7 @@ namespace CodeWalker.World
 
             LoadWaterXml("common.rpf\\data\\levels\\gta5\\water.xml");
             
-            if (GameFileCache.EnableDlc)
+            if (loadHeistIsland && GameFileCache.EnableDlc)
             {
                 LoadWaterXml("update\\update.rpf\\common\\data\\levels\\gta5\\water_heistisland.xml");
             }
