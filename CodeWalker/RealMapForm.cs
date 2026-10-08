@@ -26,22 +26,28 @@ namespace CodeWalker
         public Renderer Renderer = null;
         public object RenderSyncRoot { get { return Renderer.RenderSyncRoot; } }
 
-        // Matches map-engine / sd-phone WORLD bounds exactly
         public const float WorldXMin = -5355.0f;
         public const float WorldXMax = 6167.0f;
         public const float WorldYMin = -3833.0f;
         public const float WorldYMax = 7688.0f;
-        public static readonly float SpanX = WorldXMax - WorldXMin; // 11522
-        public static readonly float SpanY = WorldYMax - WorldYMin; // 11521
+        public static readonly float SpanX = WorldXMax - WorldXMin;
+        public static readonly float SpanY = WorldYMax - WorldYMin;
 
-        // Flat overhead light for seam-free tiles (same idea as prop studio light)
         const float MapLightDirX = 2.25f;
-        const float MapLightDirY = 0.35f;
-        const float DayTimeOfDay = 12.0f;
-        const float NightTimeOfDay = 0.0f;
+        const float MapLightDirY = 1.15f;
+        const float MapLookTimeOfDay = 0.0f;
         const int OutputTileSize4K = 4096;
 
-        float mapTimeOfDay = DayTimeOfDay;
+        static readonly SharpDX.Color OceanClearColour = new SharpDX.Color(0 / 255f, 24 / 255f, 27 / 255f, 1f);
+
+        bool mapStreetLightsEnabled = false;
+        bool toolsHiddenForCapture = false;
+        bool toolsVisibleBeforeCapture = true;
+        bool worldPanelVisibleBeforeCapture = true;
+        bool showMainMap = true;
+        bool showCayoPerico = false;
+        bool showNorthYankton = false;
+        bool suppressDlcEvents = false;
 
         volatile bool formopen = false;
         volatile bool running = false;
@@ -73,7 +79,6 @@ namespace CodeWalker
 
         Dictionary<MetaHash, YmapFile> renderworldVisibleYmapDict = new Dictionary<MetaHash, YmapFile>();
 
-        // Capture state
         volatile bool captureRequested = false;
         volatile bool batchRunning = false;
         volatile bool batchCancel = false;
@@ -84,7 +89,12 @@ namespace CodeWalker
 
         enum CapturePhase { Idle, Settling, Capture }
         CapturePhase capturePhase = CapturePhase.Idle;
-        int settleFramesLeft = 0;
+        int settleElapsedFrames = 0;
+        int settleMinFrames = 60;
+        int settleStableFrames = 0;
+        int settleLastLoadedCount = -1;
+        const int SettleStableRequired = 24;
+        const int SettleMaxFrames = 3600;
         readonly Queue<TileJob> tileQueue = new Queue<TileJob>();
         int batchTotal = 0;
         int batchDone = 0;
@@ -130,17 +140,19 @@ namespace CodeWalker
             Renderer.renderskydome = false;
             Renderer.renderlights = false;
             Renderer.renderlodlights = false;
-            Renderer.renderdistlodlights = false; // day default — no streetlight coronas
+            Renderer.renderdistlodlights = false;
             Renderer.renderartificialambientlight = false;
             Renderer.rendernaturalambientlight = true;
             Renderer.rendertimedents = true;
             Renderer.rendertimedentsalways = false;
-            Renderer.timeofday = mapTimeOfDay;
+            Renderer.timeofday = MapLookTimeOfDay;
 
-            // Mainland Los Santos only — hide DLC islands
-            Renderer.ShowCayoPerico = false;
-            Renderer.ShowNorthYankton = false;
-            Renderer.ShowGTAVMap = true;
+            showMainMap = true;
+            showCayoPerico = false;
+            showNorthYankton = false;
+            Renderer.ShowGTAVMap = showMainMap;
+            Renderer.ShowCayoPerico = showCayoPerico;
+            Renderer.ShowNorthYankton = showNorthYankton;
 
             string defaultOut = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyPictures),
@@ -171,14 +183,16 @@ namespace CodeWalker
             camEntity.Orientation = Quaternion.LookAtLH(Vector3.Zero, Vector3.Up, Vector3.ForwardLH);
 
             Renderer.SetCameraMode("2D Map");
-            Renderer.ShowCayoPerico = false;
-            Renderer.ShowNorthYankton = false;
+            Renderer.ShowGTAVMap = showMainMap;
+            Renderer.ShowCayoPerico = showCayoPerico;
+            Renderer.ShowNorthYankton = showNorthYankton;
+            Renderer.HideShipsAndMloShells = true;
+            Renderer.ShowScriptedYmaps = false;
+            Renderer.renderinteriors = false;
+            Renderer.waitforchildrentoload = true;
             ApplyFlatMapLighting();
 
-            // Start near downtown so first preview is useful
             GoToWorldPosition(200f, -900f, SpanY / 8f);
-
-            // Maximize so the square capture viewport can reach 4K when possible
             WindowState = FormWindowState.Maximized;
 
             formopen = true;
@@ -218,7 +232,6 @@ namespace CodeWalker
             space.Update(elapsed);
             Renderer.Update(elapsed, MouseLastPoint.X, MouseLastPoint.Y);
 
-            // Keep flat lighting locked every frame during capture
             if (ShadowsOffCheckBox.Checked || batchRunning || capturePhase != CapturePhase.Idle)
             {
                 ApplyFlatMapLightingLocked();
@@ -280,7 +293,6 @@ namespace CodeWalker
                 }
                 else if (batchRunning)
                 {
-                    // Advance past failed tile so batch can continue or stop cleanly
                     BeginInvoke(new Action(AdvanceBatchAfterSave));
                 }
 
@@ -308,15 +320,14 @@ namespace CodeWalker
 
         private bool IsNightMode
         {
-            get { return mapTimeOfDay < 6.0f || mapTimeOfDay >= 20.0f; }
+            get { return mapStreetLightsEnabled; }
         }
 
         private void RenderWorld()
         {
             renderworldVisibleYmapDict.Clear();
 
-            // Filter timed entities / ymaps by current day/night hour (do NOT use -1)
-            int hour = ((int)mapTimeOfDay) % 24;
+            int hour = ((int)MapLookTimeOfDay) % 24;
             MetaHash weathertype = new MetaHash(0);
 
             space.GetVisibleYmaps(camera, hour, weathertype, renderworldVisibleYmapDict);
@@ -339,7 +350,7 @@ namespace CodeWalker
 
         private void ApplyFlatMapLightingLocked()
         {
-            bool night = IsNightMode;
+            bool lightsOn = mapStreetLightsEnabled;
 
             Renderer.StudioLightingOverride = false;
             Renderer.controllightdir = true;
@@ -347,55 +358,72 @@ namespace CodeWalker
             Renderer.timerunning = false;
             Renderer.lightdirx = MapLightDirX;
             Renderer.lightdiry = MapLightDirY;
-
-            // Keep Renderer + Timecycle in sync (IsNightTime gates distant streetlight coronas)
-            Renderer.SetTimeOfDay(mapTimeOfDay);
+            Renderer.SetTimeOfDay(MapLookTimeOfDay);
 
             Renderer.renderskydome = false;
             Renderer.renderclouds = false;
             Renderer.rendernaturalambientlight = true;
-            Renderer.renderartificialambientlight = night;
-
-            // Timed streetlight props follow the clock
+            Renderer.renderartificialambientlight = true;
             Renderer.rendertimedents = true;
             Renderer.rendertimedentsalways = false;
 
-            // Hard gate city lights: Day = off, Night = on
-            // (DistantLODLights are the dense orange dots on roads)
-            Renderer.renderdistlodlights = night;
-            Renderer.renderlodlights = night;
-            Renderer.renderlights = night;
+            Renderer.renderdistlodlights = lightsOn;
+            Renderer.renderlodlights = lightsOn;
+            Renderer.renderlights = lightsOn;
 
-            // Always keep DLC islands off for RealMap
-            Renderer.ShowCayoPerico = false;
-            Renderer.ShowNorthYankton = false;
-            Renderer.ShowGTAVMap = true;
+            Renderer.ShowGTAVMap = showMainMap;
+            Renderer.ShowCayoPerico = showCayoPerico;
+            Renderer.ShowNorthYankton = showNorthYankton;
+
+            bool hideShips = HideShipsCheckBox == null || HideShipsCheckBox.Checked;
+            Renderer.HideShipsAndMloShells = hideShips;
+            Renderer.ShowScriptedYmaps = !hideShips;
+            Renderer.renderinteriors = !hideShips;
 
             if (Renderer.shaders != null)
             {
-                // ShadowsOffCheckBox checked => disable shadows for seamless tiles
                 Renderer.shaders.shadows = !ShadowsOffCheckBox.Checked;
                 Renderer.shaders.hdr = false;
             }
 
+            Renderer.DXMan?.SetClearColour(OceanClearColour);
             Renderer.MapViewDetail = (float)MapDetailNumeric.Value;
         }
 
-        private void SetMapTimeOfDay(float hour, string label)
+        private void HidePanelsForCapture()
         {
-            mapTimeOfDay = hour;
+            if (toolsHiddenForCapture) return;
+            toolsVisibleBeforeCapture = ToolsPanel.Visible;
+            worldPanelVisibleBeforeCapture = WorldPanel.Visible;
+            toolsHiddenForCapture = true;
+            ToolsPanel.Visible = false;
+            ToolsPanelShowButton.Visible = false;
+            WorldPanel.Visible = false;
+            WorldPanelShowButton.Visible = false;
+        }
+
+        private void RestorePanelsAfterCapture()
+        {
+            if (!toolsHiddenForCapture) return;
+            toolsHiddenForCapture = false;
+            ToolsPanel.Visible = toolsVisibleBeforeCapture;
+            ToolsPanelShowButton.Visible = !toolsVisibleBeforeCapture;
+            WorldPanel.Visible = worldPanelVisibleBeforeCapture;
+            WorldPanelShowButton.Visible = !worldPanelVisibleBeforeCapture;
+        }
+
+        private void SetMapStreetLights(bool lightsOn)
+        {
+            mapStreetLightsEnabled = lightsOn;
             ApplyFlatMapLighting();
             UpdateTimeOfDayLabel();
-            UpdateStatus(label + " lighting (" + hour.ToString("0.##") + ":00) — street lights "
-                + (IsNightMode ? "ON" : "OFF"));
+            UpdateStatus(lightsOn ? "Night (lights on)" : "Day (lights off)");
         }
 
         private void UpdateTimeOfDayLabel()
         {
             if (TimeOfDayModeLabel == null) return;
-            TimeOfDayModeLabel.Text = IsNightMode
-                ? "Mode: NIGHT (" + mapTimeOfDay.ToString("0") + ":00) · lights ON"
-                : "Mode: DAY (" + mapTimeOfDay.ToString("0") + ":00) · lights OFF";
+            TimeOfDayModeLabel.Text = mapStreetLightsEnabled ? "Time: Night" : "Time: Day";
         }
 
         private void Init()
@@ -434,8 +462,10 @@ namespace CodeWalker
                 return;
             }
 
-            GameFileCache.EnableDlc = true;
-            GameFileCache.EnableMods = true;
+            var s = Settings.Default;
+            GameFileCache.EnableMods = s.EnableMods;
+            GameFileCache.SelectedDlc = s.DLC;
+            GameFileCache.EnableDlc = !string.IsNullOrEmpty(s.DLC);
             GameFileCache.LoadPeds = false;
             GameFileCache.LoadVehicles = false;
             GameFileCache.LoadArchetypes = true;
@@ -443,9 +473,13 @@ namespace CodeWalker
             GameFileCache.DoFullStringIndex = false;
             GameFileCache.Init(UpdateStatus, LogError);
 
+            UpdateDlcListComboBox(GameFileCache.DlcNameList);
+            SyncDlcModsUiFromCache();
+            EnableDLCModsUI();
+
             LoadWorld();
             worldReady = true;
-            UpdateStatus("Ready — preview with mouse, or start RealMap batch capture");
+            UpdateStatus("Ready");
 
             Task.Run(() =>
             {
@@ -488,13 +522,167 @@ namespace CodeWalker
             clouds.Init(GameFileCache, UpdateStatus, weather);
 
             UpdateStatus("Loading water...");
-            // Skip Cayo Perico heist-island water
-            water.Init(GameFileCache, UpdateStatus, loadHeistIsland: false);
+            water.Init(GameFileCache, UpdateStatus, loadHeistIsland: showCayoPerico);
 
             UpdateStatus("Loading world...");
             space.Init(GameFileCache, UpdateStatus);
 
             UpdateStatus("World loaded");
+        }
+
+        private void UpdateDlcListComboBox(List<string> dlcnames)
+        {
+            try
+            {
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action(() => UpdateDlcListComboBox(dlcnames)));
+                    return;
+                }
+
+                suppressDlcEvents = true;
+                DlcLevelComboBox.Items.Clear();
+                foreach (var dlcname in dlcnames)
+                {
+                    DlcLevelComboBox.Items.Add(dlcname);
+                }
+                if (DlcLevelComboBox.Items.Count == 0)
+                {
+                    DlcLevelComboBox.Items.Add("<none>");
+                    DlcLevelComboBox.SelectedIndex = 0;
+                }
+                else if (string.IsNullOrEmpty(GameFileCache.SelectedDlc))
+                {
+                    DlcLevelComboBox.SelectedIndex = dlcnames.Count - 1;
+                }
+                else
+                {
+                    int idx = DlcLevelComboBox.FindString(GameFileCache.SelectedDlc);
+                    DlcLevelComboBox.SelectedIndex = (idx >= 0) ? idx : (dlcnames.Count - 1);
+                }
+                suppressDlcEvents = false;
+            }
+            catch { suppressDlcEvents = false; }
+        }
+
+        private void SyncDlcModsUiFromCache()
+        {
+            try
+            {
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action(SyncDlcModsUiFromCache));
+                    return;
+                }
+
+                suppressDlcEvents = true;
+                EnableModsCheckBox.Checked = GameFileCache.EnableMods;
+                EnableDlcCheckBox.Checked = GameFileCache.EnableDlc;
+                suppressDlcEvents = false;
+            }
+            catch { suppressDlcEvents = false; }
+        }
+
+        private void EnableDLCModsUI()
+        {
+            try
+            {
+                if (InvokeRequired)
+                {
+                    BeginInvoke(new Action(EnableDLCModsUI));
+                    return;
+                }
+
+                EnableModsCheckBox.Enabled = true;
+                EnableDlcCheckBox.Enabled = true;
+                DlcLevelComboBox.Enabled = true;
+            }
+            catch { }
+        }
+
+        private void SetDlcLevel(string dlc, bool enable)
+        {
+            if (!worldReady) return;
+            if (batchRunning || capturePhase != CapturePhase.Idle)
+            {
+                MessageBox.Show("Stop the current capture before changing DLC.", "RealMap",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SyncDlcModsUiFromCache();
+                return;
+            }
+
+            Cursor = Cursors.WaitCursor;
+            UpdateStatus("Applying DLC level...");
+            Task.Run(() =>
+            {
+                try
+                {
+                    lock (Renderer.RenderSyncRoot)
+                    {
+                        if (GameFileCache.SetDlcLevel(dlc, enable))
+                        {
+                            LoadWorld();
+                        }
+                    }
+                    try
+                    {
+                        Settings.Default.DLC = enable ? dlc : "";
+                        Settings.Default.Save();
+                    }
+                    catch { }
+                }
+                finally
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        Cursor = Cursors.Default;
+                        UpdateStatus("DLC updated");
+                    }));
+                }
+            });
+        }
+
+        private void SetModsEnabled(bool enable)
+        {
+            if (!worldReady) return;
+            if (batchRunning || capturePhase != CapturePhase.Idle)
+            {
+                MessageBox.Show("Stop the current capture before changing mods.", "RealMap",
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                SyncDlcModsUiFromCache();
+                return;
+            }
+
+            Cursor = Cursors.WaitCursor;
+            UpdateStatus("Applying mods setting...");
+            Task.Run(() =>
+            {
+                try
+                {
+                    lock (Renderer.RenderSyncRoot)
+                    {
+                        if (GameFileCache.SetModsEnabled(enable))
+                        {
+                            UpdateDlcListComboBox(GameFileCache.DlcNameList);
+                            LoadWorld();
+                        }
+                    }
+                    try
+                    {
+                        Settings.Default.EnableMods = enable;
+                        Settings.Default.Save();
+                    }
+                    catch { }
+                }
+                finally
+                {
+                    BeginInvoke(new Action(() =>
+                    {
+                        Cursor = Cursors.Default;
+                        UpdateStatus("Mods setting updated");
+                    }));
+                }
+            });
         }
 
         private void UpdateStatus(string text)
@@ -568,13 +756,12 @@ namespace CodeWalker
 
         private System.Drawing.Rectangle GetCaptureViewportRect()
         {
-            int left = ToolsPanel.Visible ? ToolsPanel.Right : 0;
+            int left = (!toolsHiddenForCapture && ToolsPanel.Visible) ? ToolsPanel.Right : 0;
+            int right = (!toolsHiddenForCapture && WorldPanel.Visible) ? WorldPanel.Width : 0;
             int statusH = StatusStrip.Visible ? StatusStrip.Height : 0;
-            int availW = Math.Max(1, ClientSize.Width - left);
+            int availW = Math.Max(1, ClientSize.Width - left - right);
             int availH = Math.Max(1, ClientSize.Height - statusH);
             int side = Math.Min(availW, availH);
-            // Prefer using full height so OrthographicSize math stays simple
-            side = Math.Min(side, availH);
             int x = left + (availW - side) / 2;
             int y = (availH - side) / 2;
             return new System.Drawing.Rectangle(x, y, side, side);
@@ -583,16 +770,24 @@ namespace CodeWalker
         private void PrepareCameraForTile(int z, int x, int y)
         {
             var b = GetTileBounds(z, x, y);
-            float tileSide = Math.Max(b.Width, b.Height);
+            float tileH = b.Height;
 
             var rect = GetCaptureViewportRect();
-            float camHeight = camera.Height > 1 ? camera.Height : rect.Height;
-            // Square crop covers OrthographicSize * (rect.Height / camHeight) world units
-            float ortho = tileSide * (camHeight / Math.Max(1, rect.Height));
+            float camW = camera.Width > 1 ? camera.Width : Math.Max(1, ClientSize.Width);
+            float camH = camera.Height > 1 ? camera.Height : Math.Max(1, ClientSize.Height);
+
+            float ortho = tileH * (camH / Math.Max(1, rect.Height));
+            float orthoW = ortho * (camW / Math.Max(1f, camH));
+            float capCx = rect.X + rect.Width * 0.5f;
+            float capCy = rect.Y + rect.Height * 0.5f;
+            float midX = camW * 0.5f;
+            float midY = camH * 0.5f;
+            float shiftX = ((midX - capCx) / camW) * orthoW;
+            float shiftY = ((capCy - midY) / camH) * ortho;
 
             lock (Renderer.RenderSyncRoot)
             {
-                camEntity.Position = new Vector3(b.CenterX, b.CenterY, 0);
+                camEntity.Position = new Vector3(b.CenterX + shiftX, b.CenterY + shiftY, 0);
                 camera.OrthographicTargetSize = ortho;
                 camera.OrthographicSize = ortho;
                 camera.UpdateProj = true;
@@ -604,31 +799,103 @@ namespace CodeWalker
             pendingCaptureZ = z;
             pendingCaptureX = x;
             pendingCaptureY = y;
-            // Force 4K output tiles
             pendingOutputSize = Math.Max(OutputTileSize4K, (int)OutputTileSizeNumeric.Value);
             pendingOutputPath = Path.Combine(OutputFolderTextBox.Text.Trim(), z.ToString(), x.ToString(), y.ToString() + ".png");
         }
 
         private void BeginSettleForCurrentTile()
         {
-            settleFramesLeft = (int)SettleFramesNumeric.Value;
+            HidePanelsForCapture();
+            PrepareCameraForTile(pendingCaptureZ, pendingCaptureX, pendingCaptureY);
+
+            settleMinFrames = Math.Max(5, (int)SettleFramesNumeric.Value);
+            settleElapsedFrames = 0;
+            settleStableFrames = 0;
+            settleLastLoadedCount = -1;
             capturePhase = CapturePhase.Settling;
-            UpdateStatus(string.Format("Settling {0}/{1}/{2} ({3} frames)...",
-                pendingCaptureZ, pendingCaptureX, pendingCaptureY, settleFramesLeft));
+            UpdateStatus(string.Format("Loading {0}/{1}/{2}...", pendingCaptureZ, pendingCaptureX, pendingCaptureY));
+        }
+
+        private bool IsTileContentReady(out int fileQueue, out int gpuQueue, out int loadedCount)
+        {
+            fileQueue = GameFileCache.QueueLength;
+            gpuQueue = Renderer.RenderableCache != null ? Renderer.RenderableCache.TotalQueueLength : 0;
+            loadedCount = Renderer.RenderableCache != null ? Renderer.RenderableCache.TotalItemCount : 0;
+            return fileQueue == 0 && gpuQueue == 0;
         }
 
         private void TickCaptureState()
         {
-            if (capturePhase == CapturePhase.Settling)
+            if (capturePhase != CapturePhase.Settling) return;
+
+            settleElapsedFrames++;
+
+            if ((settleElapsedFrames % 15) == 1)
             {
-                settleFramesLeft--;
-                if (settleFramesLeft <= 0)
+                PrepareCameraForTile(pendingCaptureZ, pendingCaptureX, pendingCaptureY);
+            }
+
+            bool queuesEmpty = IsTileContentReady(out int fileQ, out int gpuQ, out int loaded);
+
+            if (settleElapsedFrames < settleMinFrames)
+            {
+                settleStableFrames = 0;
+                settleLastLoadedCount = loaded;
+                if ((settleElapsedFrames % 10) == 0)
                 {
-                    capturePhase = CapturePhase.Capture;
-                    captureRequested = true;
-                    UpdateStatus(string.Format("Capturing {0}/{1}/{2}...",
-                        pendingCaptureZ, pendingCaptureX, pendingCaptureY));
+                    UpdateStatus(string.Format(
+                        "{0}/{1}/{2}: wait {3}/{4}  files={5} gpu={6}",
+                        pendingCaptureZ, pendingCaptureX, pendingCaptureY,
+                        settleElapsedFrames, settleMinFrames, fileQ, gpuQ));
                 }
+                return;
+            }
+
+            if (queuesEmpty)
+            {
+                if (loaded == settleLastLoadedCount)
+                {
+                    settleStableFrames++;
+                }
+                else
+                {
+                    settleStableFrames = 0;
+                    settleLastLoadedCount = loaded;
+                }
+            }
+            else
+            {
+                settleStableFrames = 0;
+                settleLastLoadedCount = loaded;
+            }
+
+            if ((settleElapsedFrames % 10) == 0)
+            {
+                UpdateStatus(string.Format(
+                    "{0}/{1}/{2}: files={3} gpu={4} loaded={5} stable={6}/{7}",
+                    pendingCaptureZ, pendingCaptureX, pendingCaptureY,
+                    fileQ, gpuQ, loaded, settleStableFrames, SettleStableRequired));
+            }
+
+            bool ready = queuesEmpty && settleStableFrames >= SettleStableRequired;
+            bool timedOut = settleElapsedFrames >= SettleMaxFrames;
+
+            if (ready || timedOut)
+            {
+                if (timedOut && !ready)
+                {
+                    UpdateStatus(string.Format(
+                        "{0}/{1}/{2}: timeout, capturing (files={3} gpu={4})",
+                        pendingCaptureZ, pendingCaptureX, pendingCaptureY, fileQ, gpuQ));
+                }
+                else
+                {
+                    UpdateStatus(string.Format("{0}/{1}/{2}: capturing...", pendingCaptureZ, pendingCaptureX, pendingCaptureY));
+                }
+
+                PrepareCameraForTile(pendingCaptureZ, pendingCaptureX, pendingCaptureY);
+                capturePhase = CapturePhase.Capture;
+                captureRequested = true;
             }
         }
 
@@ -681,6 +948,7 @@ namespace CodeWalker
 
             if (!batchRunning)
             {
+                RestorePanelsAfterCapture();
                 ProgressLabel.Text = string.Format("Saved tile {0}/{1}/{2}", pendingCaptureZ, pendingCaptureX, pendingCaptureY);
                 return;
             }
@@ -699,9 +967,12 @@ namespace CodeWalker
             }
 
             var job = tileQueue.Dequeue();
-            PrepareCameraForTile(job.Z, job.X, job.Y);
+            pendingCaptureZ = job.Z;
+            pendingCaptureX = job.X;
+            pendingCaptureY = job.Y;
             pendingOutputPath = job.Path;
             BeginSettleForCurrentTile();
+            pendingOutputPath = job.Path;
             UpdateBatchProgress();
         }
 
@@ -723,11 +994,12 @@ namespace CodeWalker
             capturePhase = CapturePhase.Idle;
             captureRequested = false;
             tileQueue.Clear();
+            RestorePanelsAfterCapture();
             StartCaptureButton.Enabled = true;
             StopCaptureButton.Enabled = false;
             CaptureCurrentButton.Enabled = true;
-            ProgressLabel.Text = reason + " — saved " + batchDone + " tiles, skipped " + batchSkipped;
-            UpdateStatus("Batch " + reason.ToLowerInvariant());
+            ProgressLabel.Text = reason + " - saved " + batchDone + ", skipped " + batchSkipped;
+            UpdateStatus(reason);
         }
 
         private void UpdateControlInputs(float elapsed)
@@ -767,6 +1039,14 @@ namespace CodeWalker
 
         private void RealMapForm_Load(object sender, EventArgs e)
         {
+            DarkTheme.Apply(this);
+            WorldPanel.Visible = true;
+            WorldPanelShowButton.Visible = false;
+            WorldPanel.BringToFront();
+            WorldPanelHideButton.BringToFront();
+            ToolsPanel.BringToFront();
+            ToolsPanelShowButton.BringToFront();
+            WorldPanelShowButton.BringToFront();
             Init();
         }
 
@@ -802,11 +1082,73 @@ namespace CodeWalker
             ToolsPanelShowButton.Visible = false;
         }
 
+        private void WorldPanelHideButton_Click(object sender, EventArgs e)
+        {
+            WorldPanel.Visible = false;
+            WorldPanelShowButton.Visible = true;
+        }
+
+        private void WorldPanelShowButton_Click(object sender, EventArgs e)
+        {
+            WorldPanel.Visible = true;
+            WorldPanelShowButton.Visible = false;
+        }
+
+        private void EnableGTAVMapCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            showMainMap = EnableGTAVMapCheckBox.Checked;
+            Renderer.ShowGTAVMap = showMainMap;
+        }
+
+        private void EnableCayoPericoCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            showCayoPerico = EnableCayoPericoCheckBox.Checked;
+            Renderer.ShowCayoPerico = showCayoPerico;
+            if (!worldReady) return;
+            Task.Run(() =>
+            {
+                lock (Renderer.RenderSyncRoot)
+                {
+                    water.Init(GameFileCache, UpdateStatus, loadHeistIsland: showCayoPerico);
+                }
+            });
+        }
+
+        private void EnableNorthYanktonCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            showNorthYankton = EnableNorthYanktonCheckBox.Checked;
+            Renderer.ShowNorthYankton = showNorthYankton;
+        }
+
+        private void HideShipsCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            ApplyFlatMapLighting();
+        }
+
+        private void EnableModsCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (suppressDlcEvents || !worldReady) return;
+            SetModsEnabled(EnableModsCheckBox.Checked);
+        }
+
+        private void EnableDlcCheckBox_CheckedChanged(object sender, EventArgs e)
+        {
+            if (suppressDlcEvents || !worldReady) return;
+            SetDlcLevel(DlcLevelComboBox.Text, EnableDlcCheckBox.Checked);
+        }
+
+        private void DlcLevelComboBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (suppressDlcEvents || !worldReady) return;
+            if (!EnableDlcCheckBox.Checked) return;
+            SetDlcLevel(DlcLevelComboBox.Text, true);
+        }
+
         private void BrowseOutputButton_Click(object sender, EventArgs e)
         {
             using (var dlg = new FolderBrowserDialog())
             {
-                dlg.Description = "Select RealMap tiles output folder (will write z/x/y.png)";
+                dlg.Description = "RealMap output folder";
                 if (Directory.Exists(OutputFolderTextBox.Text))
                 {
                     dlg.SelectedPath = OutputFolderTextBox.Text;
@@ -835,10 +1177,9 @@ namespace CodeWalker
             if (rect.Width < OutputTileSize4K || rect.Height < OutputTileSize4K)
             {
                 MessageBox.Show(
-                    "Capture viewport is " + rect.Width + "×" + rect.Height + " px.\n" +
-                    "For sharp 4K tiles, use a 4K monitor maximized (or larger than 4096px square).\n" +
-                    "Tiles will still be saved at 4096×4096 (upscaled if needed).",
-                    "RealMap 4K",
+                    "Capture viewport is " + rect.Width + "x" + rect.Height + ".\n" +
+                    "Tiles will be saved at 4096x4096 (upscaled if smaller).",
+                    "RealMap",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
             }
@@ -871,7 +1212,9 @@ namespace CodeWalker
                 return;
             }
 
-            PrepareCameraForTile(z, x, y);
+            pendingCaptureZ = z;
+            pendingCaptureX = x;
+            pendingCaptureY = y;
             BeginSettleForCurrentTile();
         }
 
@@ -931,7 +1274,7 @@ namespace CodeWalker
 
             if (tileQueue.Count == 0)
             {
-                ProgressLabel.Text = "Nothing to do — all tiles already exist.";
+                ProgressLabel.Text = "Nothing to do - all tiles already exist.";
                 UpdateStatus("Batch skipped (all exist)");
                 return;
             }
@@ -963,12 +1306,12 @@ namespace CodeWalker
 
         private void DayButton_Click(object sender, EventArgs e)
         {
-            SetMapTimeOfDay(DayTimeOfDay, "Day");
+            SetMapStreetLights(false);
         }
 
         private void NightButton_Click(object sender, EventArgs e)
         {
-            SetMapTimeOfDay(NightTimeOfDay, "Night");
+            SetMapStreetLights(true);
         }
 
         private void RealMapForm_MouseDown(object sender, MouseEventArgs e)

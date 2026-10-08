@@ -11,6 +11,7 @@ namespace CodeWalker.Props
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            DarkTheme.EnableApplicationWide();
             Application.Run(new PropForm());
 
             GTAFolder.UpdateSettings();

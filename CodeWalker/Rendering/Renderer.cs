@@ -98,6 +98,7 @@ namespace CodeWalker.Rendering
         public bool ShowCayoPerico = true;
         public bool ShowNorthYankton = true;
         public bool ShowGTAVMap = true;
+        public bool HideShipsAndMloShells = false;
         public List<YmapFile> VisibleYmaps = new List<YmapFile>();
         public List<YmapEntityDef> VisibleMlos = new List<YmapEntityDef>();
 
@@ -2419,6 +2420,7 @@ namespace CodeWalker.Rendering
                         rent.Renderable = rndbl;
 
                         if (HideEntities.ContainsKey(ent.EntityHash)) continue; //don't render hidden entities!
+                        if (ShouldHideMapProp(ent)) continue;
 
                         RenderArchetype(ent.Archetype, ent, rent.Renderable, false);
                     }
@@ -2554,6 +2556,7 @@ namespace CodeWalker.Rendering
                     var arch = ent.Archetype;
 
                     if (HideEntities.ContainsKey(ent.EntityHash)) continue; //don't render hidden entities!
+                    if (ShouldHideMapProp(ent)) continue;
 
                     RenderArchetype(arch, ent, rent.Renderable, false);
                 }
@@ -2561,6 +2564,51 @@ namespace CodeWalker.Rendering
 
             RenderWorldYmapExtras();
         }
+
+        private bool ShouldHideMapProp(YmapEntityDef ent)
+        {
+            if (!HideShipsAndMloShells || ent == null) return false;
+            if (ent.IsMlo) return true;
+
+            var arch = ent.Archetype;
+            if (arch == null) return false;
+
+            string n = (arch.Name ?? string.Empty).ToLowerInvariant();
+            string a = (arch.AssetName ?? string.Empty).ToLowerInvariant();
+            return IsShipOrFloatingPropName(n) || IsShipOrFloatingPropName(a);
+        }
+
+        private static bool IsShipOrFloatingPropName(string n)
+        {
+            if (string.IsNullOrEmpty(n) || n.StartsWith("hash_")) return false;
+
+            if (n.Contains("emissive_test") || n.Contains("bh1_emissive_test_building"))
+                return true;
+
+            return n.Contains("carrier")
+                || n.Contains("yacht")
+                || n.Contains("ship")
+                || n.Contains("boat")
+                || n.Contains("dinghy")
+                || n.Contains("tug")
+                || n.Contains("tropic")
+                || n.Contains("marquis")
+                || n.Contains("jetmax")
+                || n.Contains("seashark")
+                || n.Contains("speeder")
+                || n.Contains("predator")
+                || n.Contains("squalo")
+                || n.Contains("suntrap")
+                || n.Contains("submers")
+                || n.Contains("smboat")
+                || n.Contains("sm_boat")
+                || n.Contains("toro")
+                || n.Contains("longfin")
+                || n.Contains("patrolboat")
+                || n.Contains("kosatka")
+                || n.Contains("avisa");
+        }
+
         private void RenderWorldCalcEntityVisibility(YmapEntityDef ent)
         {
             float dist = (ent.Position - camera.Position).Length();

@@ -52,4 +52,20 @@
     </None>
   </ItemGroup>
 
+  <Target Name="CopyIcons" AfterTargets="Build">
+    <ItemGroup>
+      <IconFiles Include="$(MSBuildThisFileDirectory)..\icons\*.png" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutputPath)icons" />
+    <Copy SourceFiles="@(IconFiles)" DestinationFolder="$(OutputPath)icons\" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyShaders" AfterTargets="Build">
+    <ItemGroup>
+      <ShaderFiles Include="$(MSBuildThisFileDirectory)..\Shaders\*.cso" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutputPath)Shaders" />
+    <Copy SourceFiles="@(ShaderFiles)" DestinationFolder="$(OutputPath)Shaders\" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

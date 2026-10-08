@@ -18,6 +18,7 @@ namespace CodeWalker.Vehicles
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            CodeWalker.DarkTheme.EnableApplicationWide();
             Application.Run(new VehicleForm());
 
             GTAFolder.UpdateSettings();

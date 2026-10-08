@@ -11,6 +11,7 @@ namespace CodeWalker.RealMap
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            DarkTheme.EnableApplicationWide();
             Application.Run(new RealMapForm());
 
             GTAFolder.UpdateSettings();

@@ -1,4 +1,5 @@
-﻿using CodeWalker.GameFiles;
+﻿using CodeWalker;
+using CodeWalker.GameFiles;
 using CodeWalker.Properties;
 using System;
 using System.Collections.Generic;
@@ -20,6 +21,7 @@ namespace CodeWalker.Peds
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            DarkTheme.EnableApplicationWide();
             Application.Run(new PedsForm());
 
             GTAFolder.UpdateSettings();

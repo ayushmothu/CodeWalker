@@ -62,6 +62,7 @@ namespace CodeWalker
             //Application.SetHighDpiMode(HighDpiMode.SystemAware);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
+            DarkTheme.EnableApplicationWide();
 
 
             // Always check the GTA folder first thing
